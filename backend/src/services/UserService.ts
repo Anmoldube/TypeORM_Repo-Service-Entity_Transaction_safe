@@ -87,8 +87,8 @@ export class UserService {
 
     // Generate JWT token for the new user
     const token = generateToken({
-      id: result.id,
-      email: result.email,
+      id: result.id!,
+      email: result.email!,
       name: result.name || undefined,
     });
 
@@ -134,8 +134,8 @@ export class UserService {
 
     // Generate JWT token for authenticated user
     const token = generateToken({
-      id: user.id,
-      email: user.email,
+      id: user.id!,
+      email: user.email!,
       name: user.name || undefined,
     });
 
