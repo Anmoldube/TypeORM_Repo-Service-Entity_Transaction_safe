@@ -16,81 +16,88 @@ import { TransactionManager } from '../utils/TransactionManager.ts';
  * Manages registration, login, and user retrieval
  */
 export class UserService {
-  // UserRepository instance for database operations
-  private userRepository: UserRepository;
-  // TransactionManager for managing dependent transactions
+  // TransactionManager for managing transactions
   private transactionManager: TransactionManager;
+  // Store dataSource for creating repositories in transaction context
+  private dataSource: DataSource;
 
   /**
-   * Constructor initializes the service with UserRepository
+   * Constructor initializes the service with DataSource
    * @param dataSource - TypeORM DataSource for database connection
    */
   constructor(dataSource: DataSource) {
-    this.userRepository = new UserRepository(dataSource);
+    this.dataSource = dataSource;
     this.transactionManager = new TransactionManager(dataSource);
+  }
+
+  /**
+   * CORE TRANSACTION FUNCTION - All user operations use this
+   * Executes a transaction block with SERIALIZABLE isolation
+   * Automatically handles database context
+   * @param operation - The operation to perform within transaction
+   * @returns Result from the operation
+   */
+  private async executeTransaction<T>(
+    operation: (userRepo: UserRepository) => Promise<T>
+  ): Promise<T> {
+    return this.transactionManager.execute(
+      async (queryRunner) => {
+        // ===== TRANSACTION START =====
+        const userRepository = new UserRepository(queryRunner.manager);
+
+        // Execute the operation with transaction context
+        const result = await operation(userRepository);
+
+        // ===== TRANSACTION END (auto-commit on success) =====
+        return result;
+      },
+      'SERIALIZABLE'
+    );
   }
 
   /**
    * Register a new user account
    * Validates input, checks for existing user, hashes password, and returns JWT token
-   * All operations are wrapped in a DEPENDENT transaction for data consistency
-   * Uses SERIALIZABLE isolation to prevent race conditions (e.g., duplicate email registration)
+   * Uses SERIALIZABLE isolation to prevent race conditions
    * @param email - User's email address
    * @param password - User's plaintext password
    * @param name - Optional user display name
    * @returns Object containing user data and JWT token
-   * @throws Error if email/password missing, user exists, or registration fails
    */
   async register(email: string, password: string, name?: string) {
-    // Validate that email and password are provided
     if (!email || !password) {
       throw new Error(ERROR_MESSAGES.EMAIL_PASSWORD_REQUIRED);
     }
 
-    // Wrap entire registration in dependent transactions with SERIALIZABLE isolation
-    // This prevents race conditions where two clients register the same email simultaneously
-    const results = await this.transactionManager.executeDependent<any>(
-      [
-        // Step 1: Check if user with this email already exists
-        async (queryRunner) => {
-          const userRepository = new UserRepository(queryRunner.manager);
-          const userExists = await userRepository.exists(email);
-          if (userExists) {
-            throw new Error(ERROR_MESSAGES.USER_EXISTS);
-          }
-          return null;
-        },
-        // Step 2: Hash password (only if email check passed in Step 1)
-        async (queryRunner) => {
-          const hashedPassword = await hashPassword(password);
-          return hashedPassword;
-        },
-        // Step 3: Create user (only if all previous validations passed)
-        async (queryRunner) => {
-          const userRepository = new UserRepository(queryRunner.manager);
-          const hashedPassword = results[1];
-          const user = await userRepository.create(email, hashedPassword, name);
-          return user;
-        },
-      ],
-      'SERIALIZABLE' // Highest isolation level - prevents duplicate registrations
-    );
+    const result = await this.executeTransaction(async (userRepo) => {
+      // Check if user with this email already exists
+      const userExists = await userRepo.exists(email);
+      if (userExists) {
+        throw new Error(ERROR_MESSAGES.USER_EXISTS);
+      }
 
-    const user = results[2];
+      // Hash password
+      const hashedPassword = await hashPassword(password);
+
+      // Create user
+      const user = await userRepo.create(email, hashedPassword, name);
+
+      return user;
+    });
 
     // Generate JWT token for the new user
     const token = generateToken({
-      id: user.id,
-      email: user.email,
-      name: user.name || undefined,
+      id: result.id,
+      email: result.email,
+      name: result.name || undefined,
     });
 
     // Return user data and token (without password for security)
     return {
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
+        id: result.id,
+        email: result.email,
+        name: result.name,
       },
       token,
     };
@@ -99,28 +106,31 @@ export class UserService {
   /**
    * Login user with email and password
    * Validates credentials and returns JWT token
+   * Uses SERIALIZABLE isolation for consistency
    * @param email - User's email address
    * @param password - User's plaintext password
    * @returns Object containing user data and JWT token
-   * @throws Error if credentials are invalid or missing
    */
   async login(email: string, password: string) {
-    // Validate that email and password are provided
     if (!email || !password) {
       throw new Error(ERROR_MESSAGES.EMAIL_PASSWORD_REQUIRED);
     }
 
-    // Find user by email in database
-    const user = await this.userRepository.findByEmail(email);
-    if (!user) {
-      throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
-    }
+    const user = await this.executeTransaction(async (userRepo) => {
+      // Find user by email in database
+      const foundUser = await userRepo.findByEmail(email);
+      if (!foundUser) {
+        throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
+      }
 
-    // Compare provided password with stored bcrypt hash
-    const isValidPassword = await verifyPassword(password, user.password!);
-    if (!isValidPassword) {
-      throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
-    }
+      // Compare provided password with stored bcrypt hash
+      const isValidPassword = await verifyPassword(password, foundUser.password!);
+      if (!isValidPassword) {
+        throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
+      }
+
+      return foundUser;
+    });
 
     // Generate JWT token for authenticated user
     const token = generateToken({
@@ -142,21 +152,24 @@ export class UserService {
 
   /**
    * Get user profile information by ID
+   * Uses SERIALIZABLE isolation for consistency
    * @param id - User ID to retrieve
    * @returns User object with id, email, and name
-   * @throws Error if user not found
    */
   async getUserById(id: number) {
-    // Find user in database by ID
-    const user = await this.userRepository.findById(id);
-    if (!user) {
-      throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
-    }
-    // Return user data (without password)
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-    };
+    return this.executeTransaction(async (userRepo) => {
+      // Find user in database by ID
+      const user = await userRepo.findById(id);
+      if (!user) {
+        throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
+      }
+
+      // Return user data (without password)
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+      };
+    });
   }
 }

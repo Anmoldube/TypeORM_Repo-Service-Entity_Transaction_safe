@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import type { AuthenticatedRequest } from '../middleware/auth.ts';
+import type { ProtectedRequest } from '../middleware/auth.ts';
 import { TodoService } from '../services/TodoService.ts';
 import { AppDataSource } from '../database/connection.ts';
 import { HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../utils/constants.ts';
@@ -7,14 +7,9 @@ import { HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../utils/constant
 const todoService = new TodoService(AppDataSource);
 
 export const todoController = {
-    async getTodos(req: AuthenticatedRequest, res: Response) {
+    async getTodos(req: ProtectedRequest, res: Response) {
         try {
-            if (!req.user) {
-                return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: ERROR_MESSAGES.UNAUTHORIZED,
-                });
-            }
-
+            // User is GUARANTEED to exist (checked by authenticateToken middleware at gate)
             const { status, priority, dueDate, page = '1', limit = '10' } = req.query;
 
             const result = await todoService.getTodos(
@@ -44,14 +39,9 @@ export const todoController = {
         }
     },
 
-    async getTodoById(req: AuthenticatedRequest, res: Response) {
+    async getTodoById(req: ProtectedRequest, res: Response) {
         try {
-            if (!req.user) {
-                return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: ERROR_MESSAGES.UNAUTHORIZED,
-                });
-            }
-
+            // User is GUARANTEED to exist (checked by authenticateToken middleware at gate)
             const { id } = req.params;
             const todo = await todoService.getTodoById(parseInt(id), req.user.id);
 
@@ -69,14 +59,9 @@ export const todoController = {
         }
     },
 
-    async createTodo(req: AuthenticatedRequest, res: Response) {
+    async createTodo(req: ProtectedRequest, res: Response) {
         try {
-            if (!req.user) {
-                return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: ERROR_MESSAGES.UNAUTHORIZED,
-                });
-            }
-
+            // User is GUARANTEED to exist (checked by authenticateToken middleware at gate)
             const { text, priority, dueDate } = req.body;
             const todo = await todoService.createTodo(text, req.user.id, priority, dueDate);
 
@@ -97,14 +82,9 @@ export const todoController = {
         }
     },
 
-    async updateTodo(req: AuthenticatedRequest, res: Response) {
+    async updateTodo(req: ProtectedRequest, res: Response) {
         try {
-            if (!req.user) {
-                return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: ERROR_MESSAGES.UNAUTHORIZED,
-                });
-            }
-
+            // User is GUARANTEED to exist (checked by authenticateToken middleware at gate)
             const { id } = req.params;
             const { text, status, priority, dueDate } = req.body;
             const todo = await todoService.updateTodo(parseInt(id), req.user.id, {
@@ -128,14 +108,9 @@ export const todoController = {
         }
     },
 
-    async deleteTodo(req: AuthenticatedRequest, res: Response) {
+    async deleteTodo(req: ProtectedRequest, res: Response) {
         try {
-            if (!req.user) {
-                return res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: ERROR_MESSAGES.UNAUTHORIZED,
-                });
-            }
-
+            // User is GUARANTEED to exist (checked by authenticateToken middleware at gate)
             const { id } = req.params;
             await todoService.deleteTodo(parseInt(id), req.user.id);
 

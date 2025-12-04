@@ -20,6 +20,15 @@ export interface AuthenticatedRequest extends Request {
     };
 }
 
+// Extend Express Request type for GUARANTEED authenticated user (used after authenticateToken middleware)
+export interface ProtectedRequest extends Request {
+    user: {
+        id: number;
+        email: string;
+        name?: string;
+    };
+}
+
 // ========== MIDDLEWARE ==========
 /**
  * Authentication middleware that validates JWT tokens from request headers
