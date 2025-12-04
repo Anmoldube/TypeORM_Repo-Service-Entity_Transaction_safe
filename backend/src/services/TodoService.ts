@@ -1,9 +1,8 @@
 // Import TypeORM DataSource for database connection
 import { DataSource } from 'typeorm';
-// Import TodoRepository for database operations
-import { TodoRepository } from '../repositories/TodoRepository.ts';
-// Import UserRepository for user validation
-import { UserRepository } from '../repositories/UserRepository.ts';
+// Import repository helper functions (no class instances)
+import { getTodoRepository } from '../repositories/TodoRepository.ts';
+import { getUserRepository } from '../repositories/UserRepository.ts';
 // Import Todo enums for type safety
 import { Priority, TodoStatus } from '../entities/Todo.ts';
 // Import error message constants
@@ -40,13 +39,14 @@ export class TodoService {
    * @returns Result from the operation
    */
   private async executeTransaction<T>(
-    operation: (todoRepo: TodoRepository, userRepo: UserRepository) => Promise<T>
+    operation: (todoRepo: any, userRepo: any) => Promise<T>
   ): Promise<T> {
     return this.transactionManager.execute(
       async (queryRunner) => {
         // ===== TRANSACTION START =====
-        const todoRepository = new TodoRepository(queryRunner.manager);
-        const userRepository = new UserRepository(queryRunner.manager);
+        // Get repositories using helper functions with transaction context
+        const todoRepository = getTodoRepository(queryRunner.manager);
+        const userRepository = getUserRepository(queryRunner.manager);
 
         // Execute the operation with transaction context
         const result = await operation(todoRepository, userRepository);

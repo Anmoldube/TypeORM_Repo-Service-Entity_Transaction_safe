@@ -1,7 +1,7 @@
 // Import TypeORM DataSource for database connection
 import { DataSource } from 'typeorm';
-// Import UserRepository for database operations
-import { UserRepository } from '../repositories/UserRepository.ts';
+// Import repository helper function (no class instance)
+import { getUserRepository } from '../repositories/UserRepository.ts';
 // Import auth utility functions for password hashing and JWT generation
 import { hashPassword, verifyPassword, generateToken } from '../middleware/auth.ts';
 // Import error message constants
@@ -38,12 +38,13 @@ export class UserService {
    * @returns Result from the operation
    */
   private async executeTransaction<T>(
-    operation: (userRepo: UserRepository) => Promise<T>
+    operation: (userRepo: any) => Promise<T>
   ): Promise<T> {
     return this.transactionManager.execute(
       async (queryRunner) => {
         // ===== TRANSACTION START =====
-        const userRepository = new UserRepository(queryRunner.manager);
+        // Get repository using helper function with transaction context
+        const userRepository = getUserRepository(queryRunner.manager);
 
         // Execute the operation with transaction context
         const result = await operation(userRepository);
